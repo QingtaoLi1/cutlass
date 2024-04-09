@@ -51,7 +51,7 @@ D2 = element_wise(D0, D1)
 #include "cutlass/epilogue/thread/linear_combination_relu.h"
 #include "cutlass/epilogue/threadblock/default_epilogue_tensor_op.h"
 
-#include "../kernel/dual_gemm.h"
+#include "../kernel/dual_gemm_silu_identity_mul.h"
 #include "../dual_gemm_common.h"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -92,6 +92,7 @@ template <
     /// Epilogue output operator
     typename EpilogueOutputOp0_,
     typename EpilogueOutputOp1_,
+    typename EpilogueOutputOp2_,
     /// Threadblock-level swizzling operator
     typename ThreadblockSwizzle_ = threadblock::GemmIdentityThreadblockSwizzle<>,
     /// Number of stages used in the pipelined mainloop
@@ -137,6 +138,7 @@ class DualGemm {
   using InstructionShape = InstructionShape_;
   using EpilogueOutputOp0 = EpilogueOutputOp0_;
   using EpilogueOutputOp1 = EpilogueOutputOp1_;
+  using EpilogueOutputOp2 = EpilogueOutputOp2_;
   using ThreadblockSwizzle = ThreadblockSwizzle_;
   using Operator = Operator_;
   static int const kStages = Stages;
@@ -197,7 +199,7 @@ class DualGemm {
   /// Define the kernel-level GEMM operator.
   using DualGemmKernel = kernel::DualGemm<
     DualMma,
-    Epilogue0, Epilogue1,
+    Epilogue0, Epilogue1, EpilogueOutputOp2,
     ThreadblockSwizzle, kSplitKSerial,
     kStoreD0, kStoreD1>;
 
@@ -217,8 +219,10 @@ class DualGemm {
     TensorRef<ElementB const, LayoutB1> ref_B1;
     TensorRef<ElementC const, LayoutC> ref_C1;
     TensorRef<ElementC, LayoutC> ref_D1;
+    TensorRef<ElementC, LayoutC> ref_D2;
     typename EpilogueOutputOp0::Params epilogue0;
     typename EpilogueOutputOp1::Params epilogue1;
+    typename EpilogueOutputOp2::Params epilogue2;
     int split_k_slices;
 
     int batch_count;
@@ -250,10 +254,13 @@ class DualGemm {
       TensorRef<ElementB const, LayoutB1> ref_B1_,
       TensorRef<ElementC const, LayoutC> ref_C1_,
       TensorRef<ElementC, LayoutC> ref_D1_,
+      TensorRef<ElementC, LayoutC> ref_D2_,
       typename EpilogueOutputOp0::Params epilogue0_ =
         typename EpilogueOutputOp0::Params(),
       typename EpilogueOutputOp1::Params epilogue1_ =
         typename EpilogueOutputOp1::Params(),
+      typename EpilogueOutputOp2::Params epilogue2_ =
+        typename EpilogueOutputOp2::Params(),
       int split_k_slices_ = 1,
       int batch_count = 1,
       int64_t batch_stride_A = 0,
@@ -271,8 +278,10 @@ class DualGemm {
       ref_B1(ref_B1_),
       ref_C1(ref_C1_),
       ref_D1(ref_D1_),
+      ref_D2(ref_D2_),
       epilogue0(epilogue0_),
       epilogue1(epilogue1_),
+      epilogue2(epilogue2_),
       split_k_slices(split_k_slices_),
       batch_count(batch_count),
       batch_stride_A(batch_stride_A),
@@ -318,7 +327,8 @@ public:
       args.ref_D0,
       args.ref_B1.non_const_ref(),
       args.ref_C1.non_const_ref(),
-      args.ref_D1
+      args.ref_D1,
+      args.ref_D2
     );
 
     if (status != Status::kSuccess) {
@@ -393,8 +403,10 @@ public:
       args.ref_B1.non_const_ref(),
       args.ref_C1.non_const_ref(),
       args.ref_D1,
+      args.ref_D2,
       args.epilogue0,
       args.epilogue1,
+      args.epilogue2,
       reinterpret_cast<int *>(workspace),
       args.batch_stride_A,
       args.batch_stride_B0,
@@ -422,8 +434,10 @@ public:
     params_.ref_B1.reset(args.ref_B1.non_const_ref().data());
     params_.ref_C1.reset(args.ref_C1.non_const_ref().data());
     params_.ref_D1.reset(args.ref_D1.data());
+    params_.ref_D2.reset(args.ref_D2.data());
     params_.output_op_0 = args.epilogue0;
     params_.output_op_1 = args.epilogue1;
+    params_.output_op_2 = args.epilogue2;
     params_.semaphore = reinterpret_cast<int *>(workspace);
 
     return Status::kSuccess;

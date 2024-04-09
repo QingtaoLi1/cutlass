@@ -41,6 +41,7 @@
 #include "cutlass/numeric_conversion.h"
 #include "cutlass/epilogue/thread/scale_type.h"
 #include "cutlass/epilogue/thread/linear_combination_params.h"
+#include "cutlass/epilogue/thread/activation.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -91,6 +92,9 @@ private:
 public:
 
   /// Constructs the function object, possibly loading from pointers in host memory
+  CUTLASS_HOST_DEVICE
+  LeftSiLUAndMul() : LeftSiLUAndMul(Params{}) {}
+
   CUTLASS_HOST_DEVICE
   LeftSiLUAndMul(Params const &/*params*/) {}
 
@@ -148,3 +152,4 @@ public:
 } // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
